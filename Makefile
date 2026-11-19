@@ -1,42 +1,51 @@
-# Makefile — A-Maze-ing
-# RESPONSABLE: Otto (configurer les chemins et dépendances)
+VENV      = .venv
+PYTHON    = $(VENV)/bin/python3
+MAIN      = src
+INSTALLED = $(VENV)/.installed
+OUTPUT    = data/output
 
-PYTHON = python3
-MAIN   = call_me_maybe.py
-CONFIG = config.txt
+# Directories that are not our code and must never be linted.
+# flake8 takes a comma-separated list of names, mypy takes regexes.
+FLAKE8_EXCLUDE = --extend-exclude $(VENV),llm_sdk
+MYPY_EXCLUDE   = --exclude '^\.venv/' --exclude '^llm_sdk/'
 
-.PHONY: install run debug lint lint-strict clean
+.PHONY: install run debug lint lint-strict clean fclean
 
-## Installe les dépendances du projet
-install:
-	pip install -r requirements.txt
+install: $(INSTALLED)
 
-## Lance le programme principal avec config.txt
-run:
-	$(PYTHON) $(MAIN) $(CONFIG)
+# Real file target, created only once every package is installed: the
+# install is redone if it never completed, or if pyproject.toml or
+# uv.lock is newer than the last successful install.
+$(INSTALLED): pyproject.toml uv.lock
+	uv sync
+	touch $(INSTALLED)
 
-## Lance en mode debug (pdb)
-debug:
-	$(PYTHON) -m pdb $(MAIN) $(CONFIG)
+run: $(INSTALLED)
+	$(PYTHON) -m $(MAIN) $(ARGS)
 
-## Nettoyage des fichiers temporaires
+debug: $(INSTALLED)
+	$(PYTHON) -m pdb -m $(MAIN) $(ARGS)
+
 clean:
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name __pycache__ -not -path "./$(VENV)/*" \
+		-exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name .mypy_cache -exec rm -rf {} + 2>/dev/null || true
-	find . -name "*.pyc" -delete
-	rm -rf dist/ build/ *.egg-info/
+	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
+	find . -name "*.pyc" -not -path "./$(VENV)/*" -delete
 
-## Linting: flake8 + mypy (flags obligatoires du sujet)
-lint:
-	flake8 .flake8
-	mypy . \
+fclean: clean
+	rm -rf $(VENV) $(OUTPUT)
+
+lint: $(INSTALLED)
+	$(PYTHON) -m flake8 . $(FLAKE8_EXCLUDE)
+	$(PYTHON) -m mypy . \
+		$(MYPY_EXCLUDE) \
 		--warn-return-any \
 		--warn-unused-ignores \
 		--ignore-missing-imports \
 		--disallow-untyped-defs \
 		--check-untyped-defs
 
-## Linting strict (optionnel mais recommandé)
-lint-strict:
-	flake8 .
-	mypy . --strict:warn-unused-ignores
+lint-strict: $(INSTALLED)
+	$(PYTHON) -m flake8 . $(FLAKE8_EXCLUDE)
+	$(PYTHON) -m mypy . $(MYPY_EXCLUDE) --strict
